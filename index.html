@@ -298,7 +298,7 @@
     </div>
 
     <script>
-        // ====================== Firebase 配置（已修正 databaseURL） ======================
+        // ====================== Firebase 配置 ======================
         const firebaseConfig = {
             apiKey: "AIzaSyCtuXt-ylrLFhjOoj7U7hGbStVQx2l22QY",
             authDomain: "blacksky-minesweeper-7b1a1.firebaseapp.com",
@@ -625,8 +625,11 @@
                 alert("🔄 Firebase 正在登入中，請等待 1~2 秒後再點擊");
                 return;
             }
+
             const roomId = 'ROOM-' + Math.random().toString(36).substring(2, 8).toUpperCase();
             selectedDifficulty = 'medium';
+
+            console.log("🚀 正在建立房間:", roomId);
 
             db.ref('rooms/' + roomId).set({
                 id: roomId,
@@ -641,26 +644,46 @@
                 winner: null,
                 rematch: { host: false, guest: false }
             }).then(() => {
+                console.log("✅ 房間建立成功！ID:", roomId);
+                
                 currentRoomId = roomId;
                 myRole = 'host';
-                showScreen('screen-room');
+
+                // 立即顯示房間畫面（修正關鍵 bug）
+                showScreen('room');
+                
+                // 立即顯示房間資訊（避免等待 listener）
+                document.getElementById('room-id-display').textContent = roomId;
+                document.getElementById('host-name').textContent = playerNickname + ' (您)';
+                document.getElementById('guest-name').textContent = '等待玩家加入...';
+
                 listenRoom();
             }).catch(err => {
-                console.error(err);
+                console.error("❌ 建立房間失敗：", err);
                 alert("❌ 建立房間失敗：" + err.message);
             });
         }
 
         function joinRoom(roomId) {
+            if (!currentUser) {
+                alert("🔄 Firebase 正在登入中，請等待 1~2 秒後再點擊");
+                return;
+            }
+
             currentRoomId = roomId;
             myRole = 'guest';
+
             db.ref('rooms/' + roomId + '/players/guest').set({
                 uid: currentUser.uid,
                 name: playerNickname,
                 ready: false
             }).then(() => {
-                showScreen('screen-room');
+                console.log("✅ 已加入房間:", roomId);
+                showScreen('room');        // ← 已修正
                 listenRoom();
+            }).catch(err => {
+                console.error("❌ 加入房間失敗：", err);
+                alert("❌ 加入房間失敗：" + err.message);
             });
         }
 
@@ -668,6 +691,8 @@
             db.ref('rooms/' + currentRoomId).on('value', snapshot => {
                 const room = snapshot.val();
                 if (!room) return;
+
+                console.log('🔥 Room listener 收到資料:', room);
 
                 document.getElementById('room-id-display').textContent = room.id;
 
@@ -712,6 +737,7 @@
                     if (myRole === 'host') db.ref('rooms/' + currentRoomId).remove();
                 }).finally(() => {
                     currentRoomId = null;
+                    myRole = null;
                     showScreen('lobby');
                     loadRooms();
                 });
@@ -820,7 +846,7 @@
         function returnToRoom() {
             document.getElementById('result-modal').classList.add('hidden');
             db.ref(`rooms/${currentRoomId}/status`).set('waiting');
-            showScreen('screen-room');
+            showScreen('room');        // ← 已修正
         }
 
         function backToHome() {
