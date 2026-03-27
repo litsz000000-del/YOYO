@@ -119,14 +119,12 @@
                 <p class="text-white/70 mb-10">經典踩地雷 • 雙人即時對戰 • 專業設計</p>
                
                 <div class="grid grid-cols-2 gap-6">
-                    <!-- 單人模式 -->
                     <button onclick="startSinglePlayer()" class="group bg-white text-[#166534] hover:bg-[#4ade80] hover:text-white rounded-3xl p-8 transition-all duration-300 flex flex-col items-center">
                         <div class="text-6xl mb-4 group-active:scale-110 transition">🧍</div>
                         <h3 class="text-2xl font-bold">單人模式</h3>
                         <p class="text-sm opacity-70 mt-2">獨自挑戰經典踩地雷<br>參考圖片中等難度</p>
                     </button>
                    
-                    <!-- 雙人對戰模式 -->
                     <button onclick="enterLobby()" class="group bg-white text-[#166534] hover:bg-[#4ade80] hover:text-white rounded-3xl p-8 transition-all duration-300 flex flex-col items-center">
                         <div class="text-6xl mb-4 group-active:scale-110 transition">👥</div>
                         <h3 class="text-2xl font-bold">雙人對戰模式</h3>
@@ -160,7 +158,6 @@
             </div>
            
             <div id="rooms-list" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <!-- 房間卡片由 JS 動態產生 -->
             </div>
            
             <div id="no-rooms" class="hidden text-center py-12 text-white/60">
@@ -181,7 +178,6 @@
                     </button>
                 </div>
                
-                <!-- 玩家位置 -->
                 <div class="grid grid-cols-2 gap-6">
                     <div id="slot-host" class="bg-white/10 rounded-3xl p-6 flex flex-col items-center">
                         <div class="w-12 h-12 bg-[#4ade80] text-[#166534] rounded-2xl flex items-center justify-center text-3xl mb-3">👑</div>
@@ -270,7 +266,6 @@
                 </div>
             </div>
            
-            <!-- 遊戲狀態列 -->
             <div id="game-status-bar" class="mt-6 text-center text-xl font-bold hidden"></div>
            
             <!-- 結算畫面 -->
@@ -289,7 +284,7 @@
             </div>
         </div>
 
-        <!-- 單人模式結算 -->
+        <!-- 單人模式專用結算 -->
         <div id="single-result" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
             <div class="modal bg-white text-[#166534] rounded-3xl max-w-md w-full mx-4 p-10 text-center">
                 <h2 class="text-4xl font-bold mb-2">恭喜完成！</h2>
@@ -303,7 +298,7 @@
     </div>
 
     <script>
-        // ====================== Firebase 配置 ======================
+        // ====================== Firebase 配置（已修正 databaseURL） ======================
         const firebaseConfig = {
             apiKey: "AIzaSyCtuXt-ylrLFhjOoj7U7hGbStVQx2l22QY",
             authDomain: "blacksky-minesweeper-7b1a1.firebaseapp.com",
@@ -311,7 +306,8 @@
             storageBucket: "blacksky-minesweeper-7b1a1.firebasestorage.app",
             messagingSenderId: "7219715494",
             appId: "1:7219715494:web:a2fd9ad403bb78a981c367",
-            measurementId: "G-BYT8FPREKL"
+            measurementId: "G-BYT8FPREKL",
+            databaseURL: "https://blacksky-minesweeper-7b1a1-default-rtdb.firebaseio.com"
         };
 
         // ====================== 全局變數 ======================
@@ -324,7 +320,6 @@
         let myBoard = null;
         let opponentBoardState = null;
         let myTimerInterval = null;
-        let opponentTimerInterval = null;
         let roomsRef = null;
 
         const difficulties = {
@@ -497,11 +492,7 @@
                         .then(() => console.log("✅ 匿名登入成功！"))
                         .catch(err => {
                             console.error("❌ 匿名登入失敗：", err);
-                            if (err.code === 'auth/operation-not-allowed') {
-                                alert("❌ Firebase 尚未開啟「匿名登入」！\n\n請到 Firebase Console → Authentication → Sign-in method 開啟 Anonymous");
-                            } else {
-                                alert("❌ 登入失敗：" + err.message + "\n\n請重新整理網頁後再試");
-                            }
+                            alert("❌ 登入失敗：" + err.message);
                         });
                 }
             });
@@ -530,7 +521,7 @@
         function renderMainBoard() {
             const container = document.getElementById('main-board-container');
             container.style.gridTemplateColumns = `repeat(${myBoard.cols}, 32px)`;
-            container.replaceChildren();   // 重要修正：避免事件重複綁定
+            container.replaceChildren();
 
             for (let r = 0; r < myBoard.rows; r++) {
                 for (let c = 0; c < myBoard.cols; c++) {
@@ -654,7 +645,10 @@
                 myRole = 'host';
                 showScreen('screen-room');
                 listenRoom();
-            }).catch(err => alert("❌ 建立房間失敗：" + err.message));
+            }).catch(err => {
+                console.error(err);
+                alert("❌ 建立房間失敗：" + err.message);
+            });
         }
 
         function joinRoom(roomId) {
@@ -712,7 +706,7 @@
             if (confirm('確定離開房間？')) {
                 db.ref('rooms/' + currentRoomId).once('value').then(s => {
                     const room = s.val();
-                    if (room && room.players[myRole].uid === currentUser.uid) {
+                    if (room && room.players[myRole] && room.players[myRole].uid === currentUser.uid) {
                         db.ref(`rooms/${currentRoomId}/players/${myRole}`).remove();
                     }
                     if (myRole === 'host') db.ref('rooms/' + currentRoomId).remove();
