@@ -477,23 +477,17 @@
             auth = firebase.auth();
             db = firebase.database();
 
-            console.log("🔄 Firebase 初始化完成，正在進行匿名登入...");
-
             auth.onAuthStateChanged(user => {
                 if (user) {
                     currentUser = user;
                     playerNickname = localStorage.getItem('nickname') || `黑空${Math.floor(Math.random() * 9999)}`;
                     document.getElementById('display-name').textContent = playerNickname;
                     document.getElementById('welcome-name').textContent = playerNickname;
-                    console.log("✅ 匿名登入成功！UID:", user.uid);
                 } else {
-                    console.log("🔄 開始執行匿名登入...");
-                    auth.signInAnonymously()
-                        .then(() => console.log("✅ 匿名登入成功！"))
-                        .catch(err => {
-                            console.error("❌ 匿名登入失敗：", err);
-                            alert("❌ 登入失敗：" + err.message);
-                        });
+                    auth.signInAnonymously().catch(err => {
+                        console.error("匿名登入失敗：", err);
+                        alert("登入失敗：" + err.message);
+                    });
                 }
             });
         }
@@ -596,6 +590,8 @@
                 Object.keys(rooms).forEach(roomId => {
                     const room = rooms[roomId];
                     if (room.status !== 'waiting') return;
+                    if (!room.players?.host && !room.players?.guest) return;
+
                     hasRoom = true;
 
                     const playersCount = (room.players?.host ? 1 : 0) + (room.players?.guest ? 1 : 0);
@@ -629,8 +625,6 @@
             const roomId = 'ROOM-' + Math.random().toString(36).substring(2, 8).toUpperCase();
             selectedDifficulty = 'medium';
 
-            console.log("🚀 正在建立房間:", roomId);
-
             db.ref('rooms/' + roomId).set({
                 id: roomId,
                 created: Date.now(),
@@ -644,22 +638,20 @@
                 winner: null,
                 rematch: { host: false, guest: false }
             }).then(() => {
-                console.log("✅ 房間建立成功！ID:", roomId);
-                
                 currentRoomId = roomId;
                 myRole = 'host';
 
-                // 立即顯示房間畫面（修正關鍵 bug）
+                // 關鍵修正：設定網頁關閉時自動移除玩家
+                db.ref(`rooms/${currentRoomId}/players/${myRole}`).onDisconnect().remove();
+
                 showScreen('room');
-                
-                // 立即顯示房間資訊（避免等待 listener）
                 document.getElementById('room-id-display').textContent = roomId;
                 document.getElementById('host-name').textContent = playerNickname + ' (您)';
                 document.getElementById('guest-name').textContent = '等待玩家加入...';
 
                 listenRoom();
             }).catch(err => {
-                console.error("❌ 建立房間失敗：", err);
+                console.error("建立房間失敗：", err);
                 alert("❌ 建立房間失敗：" + err.message);
             });
         }
@@ -678,11 +670,12 @@
                 name: playerNickname,
                 ready: false
             }).then(() => {
-                console.log("✅ 已加入房間:", roomId);
-                showScreen('room');        // ← 已修正
+                db.ref(`rooms/${currentRoomId}/players/${myRole}`).onDisconnect().remove();
+
+                showScreen('room');
                 listenRoom();
             }).catch(err => {
-                console.error("❌ 加入房間失敗：", err);
+                console.error("加入房間失敗：", err);
                 alert("❌ 加入房間失敗：" + err.message);
             });
         }
@@ -692,7 +685,11 @@
                 const room = snapshot.val();
                 if (!room) return;
 
-                console.log('🔥 Room listener 收到資料:', room);
+                // 自動清除完全沒有玩家的房間
+                if (!room.players?.host && !room.players?.guest) {
+                    db.ref('rooms/' + currentRoomId).remove();
+                    return;
+                }
 
                 document.getElementById('room-id-display').textContent = room.id;
 
@@ -712,9 +709,12 @@
                 const meReady = myRole === 'host' ? room.players?.host?.ready : room.players?.guest?.ready;
                 readyBtn.textContent = meReady ? '取消準備' : '準備完成';
 
+                // 雙方準備好 → 開始遊戲
                 if (room.players?.host?.ready && room.players?.guest?.ready && room.status === 'waiting') {
                     startMultiGame(room);
+                    db.ref(`rooms/${currentRoomId}/status`).set('playing');
                 }
+
                 if (room.status === 'playing' && document.getElementById('screen-game').classList.contains('hidden')) {
                     startMultiGame(room);
                 }
@@ -729,18 +729,16 @@
 
         function leaveRoom() {
             if (confirm('確定離開房間？')) {
-                db.ref('rooms/' + currentRoomId).once('value').then(s => {
-                    const room = s.val();
-                    if (room && room.players[myRole] && room.players[myRole].uid === currentUser.uid) {
-                        db.ref(`rooms/${currentRoomId}/players/${myRole}`).remove();
+                if (currentRoomId && myRole) {
+                    db.ref(`rooms/${currentRoomId}/players/${myRole}`).remove();
+                    if (myRole === 'host') {
+                        db.ref('rooms/' + currentRoomId).remove();
                     }
-                    if (myRole === 'host') db.ref('rooms/' + currentRoomId).remove();
-                }).finally(() => {
-                    currentRoomId = null;
-                    myRole = null;
-                    showScreen('lobby');
-                    loadRooms();
-                });
+                }
+                currentRoomId = null;
+                myRole = null;
+                showScreen('lobby');
+                loadRooms();
             }
         }
 
@@ -846,7 +844,7 @@
         function returnToRoom() {
             document.getElementById('result-modal').classList.add('hidden');
             db.ref(`rooms/${currentRoomId}/status`).set('waiting');
-            showScreen('room');        // ← 已修正
+            showScreen('room');
         }
 
         function backToHome() {
@@ -866,8 +864,7 @@
         window.onload = function() {
             initFirebase();
             showScreen('home');
-            console.log('%c🎮 踩地雷對戰網站已載入！專業設計已完美還原您上傳的圖片風格。', 'color:#4ade80;font-size:16px;font-weight:bold');
-            console.log('✅ 單人模式 • 雙人即時房間 • 準備機制 • 再來一局 1/2 2/2 • 3秒自動開始');
+            console.log('%c🎮 踩地雷對戰已修正完成！點擊格子正常 + 房間自動關閉', 'color:#4ade80;font-size:16px;font-weight:bold');
         };
     </script>
 </body>
