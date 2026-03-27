@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>踩地雷對戰 - BlackSky Minesweeper</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        
+        :root {
+            --tw-color-primary: #22c55e;
+        }
+        
+        body {
+            font-family: 'Noto Sans TC', system-ui, sans-serif;
+        }
+        
+        .minesweeper-grid {
+            display: grid;
+            gap: 2px;
+            background: #4ade80;
+            padding: 4px;
+            border: 4px solid #166534;
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+        }
+        
+        .cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 18px;
+            width: 32px;
+            height: 32px;
+            background: #e5d9b8;
+            border: 3px solid #f1e9d2;
+            border-top-color: #f8f1e0;
+            border-left-color: #f8f1e0;
+            box-shadow: inset 2px 2px 0 #c0c0c0,
+                        inset -2px -2px 0 #808080;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .cell.revealed {
+            background: #d4c9a8;
+            border: 2px solid #a8a8a8;
+            box-shadow: none;
+            font-size: 20px;
+        }
+        
+        .cell.flagged {
+            background: #e5d9b8;
+            border: 3px solid #f1e9d2;
+            box-shadow: inset 2px 2px 0 #c0c0c0,
+                        inset -2px -2px 0 #808080;
+        }
+        
+        .mini-grid .cell {
+            width: 16px;
+            height: 16px;
+            font-size: 11px;
+        }
+        
+        .number-1 { color: #1e40af; }
+        .number-2 { color: #15803d; }
+        .number-3 { color: #b91c1c; }
+        .number-4 { color: #6b21a8; }
+        .number-5 { color: #854d0e; }
+        .number-6 { color: #0f766e; }
+        .number-7 { color: #1f2937; }
+        .number-8 { color: #444444; }
+        
+        .header-bg {
+            background: linear-gradient(to right, #166534, #4ade80);
+        }
+        
+        .modal {
+            animation: modalPop 0.3s ease;
+        }
+        
+        @keyframes modalPop {
+            0% { transform: scale(0.95); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-[#166534] text-white min-h-screen">
+    <!-- Firebase 初始化腳本會在下方 -->
+    <div id="app" class="max-w-7xl mx-auto">
+        
+        <!-- 頂部導航 -->
+        <div class="header-bg px-6 py-3 flex items-center justify-between shadow-lg">
+            <div class="flex items-center gap-3">
+                <div class="text-3xl">💣</div>
+                <h1 class="text-2xl font-bold tracking-widest">踩地雷對戰</h1>
+                <span class="px-3 py-1 bg-white/20 text-xs font-medium rounded-full">黑空BlackSky 版</span>
+            </div>
+            
+            <div id="user-info" class="flex items-center gap-4 text-sm">
+                <div id="player-name-display" class="bg-white/10 px-4 py-1 rounded-2xl flex items-center gap-2">
+                    <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                    <span id="display-name" class="font-medium">載入中...</span>
+                </div>
+                <button onclick="logout()" 
+                        class="px-5 py-2 bg-white/10 hover:bg-white/20 rounded-2xl text-sm font-medium transition">
+                    登出
+                </button>
+            </div>
+        </div>
+
+        <!-- 主畫面切換 -->
+        
+        <!-- HOME 畫面 -->
+        <div id="screen-home" class="p-8">
+            <div class="max-w-2xl mx-auto bg-white/10 backdrop-blur-xl rounded-3xl p-10 text-center shadow-2xl border border-white/20">
+                <h2 class="text-4xl font-bold mb-2">歡迎回來，<span id="welcome-name" class="text-[#4ade80]"></span>！</h2>
+                <p class="text-white/70 mb-10">經典踩地雷 • 雙人即時對戰 • 專業設計</p>
+                
+                <div class="grid grid-cols-2 gap-6">
+                    <!-- 單人模式 -->
+                    <button onclick="startSinglePlayer()"
+                            class="group bg-white text-[#166534] hover:bg-[#4ade80] hover:text-white rounded-3xl p-8 transition-all duration-300 flex flex-col items-center">
+                        <div class="text-6xl mb-4 group-active:scale-110 transition">🧍</div>
+                        <h3 class="text-2xl font-bold">單人模式</h3>
+                        <p class="text-sm opacity-70 mt-2">獨自挑戰經典踩地雷<br>參考圖片中等難度</p>
+                    </button>
+                    
+                    <!-- 雙人對戰模式 -->
+                    <button onclick="enterLobby()"
+                            class="group bg-white text-[#166534] hover:bg-[#4ade80] hover:text-white rounded-3xl p-8 transition-all duration-300 flex flex-col items-center">
+                        <div class="text-6xl mb-4 group-active:scale-110 transition">👥</div>
+                        <h3 class="text-2xl font-bold">雙人對戰模式</h3>
+                        <p class="text-sm opacity-70 mt-2">建立房間 • 即時對戰<br>率先完成者勝</p>
+                    </button>
+                </div>
+                
+                <div class="mt-10 text-xs text-white/50 flex justify-center items-center gap-8">
+                    <div class="flex items-center gap-2">
+                        <span class="text-[#4ade80]">●</span> 參考您上傳的圖片風格
+                    </div>
+                    <div>中等難度預設 • 16×16 • 40 顆地雷</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 大廳（房間列表） -->
+        <div id="screen-lobby" class="hidden p-8">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-3xl font-bold flex items-center gap-3">
+                    <span>🪑</span> 雙人對戰大廳
+                </h2>
+                <div class="flex gap-4">
+                    <button onclick="createRoom()" 
+                            class="px-8 py-3 bg-[#4ade80] hover:bg-[#22c55e] text-[#166534] font-bold rounded-2xl flex items-center gap-2 shadow-lg">
+                        <span class="text-xl">＋</span> 建立新房間
+                    </button>
+                    <button onclick="backToHome()" 
+                            class="px-8 py-3 bg-white/10 hover:bg-white/20 rounded-2xl font-medium">
+                        返回首頁
+                    </button>
+                </div>
+            </div>
+            
+            <div id="rooms-list" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- 房間卡片由 JS 動態產生 -->
+            </div>
+            
+            <div id="no-rooms" class="hidden text-center py-12 text-white/60">
+                目前沒有開放房間<br>點擊上方「建立新房間」開始對戰
+            </div>
+        </div>
+
+        <!-- 房間內畫面 -->
+        <div id="screen-room" class="hidden p-8">
+            <div class="max-w-2xl mx-auto bg-white/10 backdrop-blur-xl rounded-3xl p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <span class="text-xs tracking-widest bg-white/20 px-3 py-1 rounded-2xl">房間代碼</span>
+                        <span id="room-id-display" class="ml-3 font-mono text-3xl font-bold"></span>
+                    </div>
+                    <button onclick="leaveRoom()" 
+                            class="px-6 py-2 text-red-300 hover:text-red-400 flex items-center gap-2">
+                        <span>←</span> 離開房間
+                    </button>
+                </div>
+                
+                <!-- 玩家位置 -->
+                <div class="grid grid-cols-2 gap-6">
+                    <!-- 玩家1 (房主) -->
+                    <div id="slot-host" class="bg-white/10 rounded-3xl p-6 flex flex-col items-center">
+                        <div class="w-12 h-12 bg-[#4ade80] text-[#166534] rounded-2xl flex items-center justify-center text-3xl mb-3">👑</div>
+                        <p class="font-medium" id="host-name"></p>
+                        <div id="host-ready" class="mt-4 px-6 py-2 text-xs font-bold rounded-2xl bg-green-400 text-[#166534] hidden">已準備 ✅</div>
+                    </div>
+                    
+                    <!-- 玩家2 -->
+                    <div id="slot-guest" class="bg-white/10 rounded-3xl p-6 flex flex-col items-center relative">
+                        <div class="w-12 h-12 bg-white/30 text-white rounded-2xl flex items-center justify-center text-3xl mb-3">👤</div>
+                        <p class="font-medium" id="guest-name">等待玩家加入...</p>
+                        <div id="guest-ready" class="mt-4 px-6 py-2 text-xs font-bold rounded-2xl bg-green-400 text-[#166534] hidden">已準備 ✅</div>
+                    </div>
+                </div>
+                
+                <div class="mt-10 flex justify-center gap-6">
+                    <button onclick="toggleReady()" 
+                            id="ready-btn"
+                            class="px-12 py-4 bg-[#4ade80] hover:bg-[#22c55e] text-[#166534] font-bold text-xl rounded-3xl transition">
+                        準備完成
+                    </button>
+                </div>
+                
+                <p class="text-center text-white/50 text-sm mt-6">雙方都準備完成後，遊戲將立即開始</p>
+            </div>
+        </div>
+
+        <!-- 遊戲畫面（單人 / 雙人共用） -->
+        <div id="screen-game" class="hidden p-6">
+            <div class="flex justify-between items-start">
+                
+                <!-- 左側 / 您的資訊 -->
+                <div class="w-64 bg-white/10 rounded-3xl p-6">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="text-2xl">🧍</div>
+                        <div>
+                            <p class="text-sm text-white/60">您</p>
+                            <p id="me-name" class="font-bold text-xl"></p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-between bg-white/10 rounded-2xl p-4 mb-6">
+                        <div class="text-center">
+                            <div class="flex items-center justify-center gap-1 text-red-400 text-2xl">🚩</div>
+                            <div id="me-flags" class="text-3xl font-mono font-bold">40</div>
+                            <div class="text-xs text-white/50">剩餘地雷</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="flex items-center justify-center gap-1 text-yellow-300 text-2xl">⏱️</div>
+                            <div id="me-timer" class="text-3xl font-mono font-bold">000</div>
+                            <div class="text-xs text-white/50">您的時間</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 您的難度標籤 -->
+                    <div id="me-difficulty" class="text-xs px-4 py-2 bg-white/20 rounded-2xl inline-flex items-center"></div>
+                </div>
+                
+                <!-- 中央主板 -->
+                <div class="flex-1 max-w-[520px] mx-8">
+                    <div id="main-board-container" class="minesweeper-grid mx-auto" style="grid-template-columns: repeat(16, 32px);">
+                        <!-- 格子由 JS 產生 -->
+                    </div>
+                </div>
+                
+                <!-- 右側 對手資訊（單人模式隱藏） -->
+                <div id="opponent-panel" class="w-64 bg-white/10 rounded-3xl p-6 hidden">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="text-2xl">👤</div>
+                        <div>
+                            <p class="text-sm text-white/60">對手</p>
+                            <p id="opponent-name" class="font-bold text-xl"></p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-between bg-white/10 rounded-2xl p-4 mb-6">
+                        <div class="text-center">
+                            <div class="flex items-center justify-center gap-1 text-red-400 text-2xl">🚩</div>
+                            <div id="opponent-flags" class="text-3xl font-mono font-bold">40</div>
+                            <div class="text-xs text-white/50">剩餘地雷</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="flex items-center justify-center gap-1 text-yellow-300 text-2xl">⏱️</div>
+                            <div id="opponent-timer" class="text-3xl font-mono font-bold">000</div>
+                            <div class="text-xs text-white/50">對手時間</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 小型對手板 -->
+                    <div class="text-xs text-white/50 mb-2 flex justify-center">對手進度</div>
+                    <div id="mini-board-container" class="minesweeper-grid mx-auto mini-grid" style="grid-template-columns: repeat(16, 16px); background:#166534; padding:3px;">
+                        <!-- 小格子由 JS 產生 -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 遊戲狀態列 -->
+            <div id="game-status-bar" class="mt-6 text-center text-xl font-bold hidden">
+                <!-- 勝負訊息由 JS 動態插入 -->
+            </div>
+            
+            <!-- 結算畫面 -->
+            <div id="result-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+                <div class="modal bg-white text-[#166534] rounded-3xl max-w-md w-full mx-4 p-10 text-center">
+                    <h2 id="result-title" class="text-4xl font-bold mb-4"></h2>
+                    <p id="result-subtitle" class="text-xl mb-8"></p>
+                    
+                    <div class="flex justify-center gap-6">
+                        <button onclick="rematch()" 
+                                id="rematch-btn"
+                                class="px-10 py-4 bg-[#4ade80] text-[#166534] font-bold rounded-3xl text-lg">再來一局 <span id="rematch-count" class="ml-2 text-sm bg-white/30 px-3 rounded-2xl"></span></button>
+                        <button onclick="returnToRoom()" 
+                                class="px-10 py-4 bg-white/10 text-white font-medium rounded-3xl text-lg">返回房間</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 單人模式專用結算（不使用 result-modal） -->
+        <div id="single-result" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+            <div class="modal bg-white text-[#166534] rounded-3xl max-w-md w-full mx-4 p-10 text-center">
+                <h2 class="text-4xl font-bold mb-2">恭喜完成！</h2>
+                <p id="single-time" class="text-2xl mb-8"></p>
+                <div class="flex gap-4 justify-center">
+                    <button onclick="restartSingle()" class="px-8 py-3 bg-[#4ade80] rounded-3xl font-bold">再玩一次</button>
+                    <button onclick="backToHome()" class="px-8 py-3 bg-white/10 text-white rounded-3xl">返回首頁</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ====================== Firebase 配置 ======================
+        // TODO: 請把下面替換成您自己的 Firebase Config
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY_HERE",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // ====================== 全局變數 ======================
+        let firebaseApp, auth, db;
+        let currentUser = null;
+        let playerNickname = "黑空玩家";
+        
+        // 遊戲變數
+        let currentMode = null; // 'single' or 'multi'
+        let currentRoomId = null;
+        let myRole = null; // 'host' or 'guest'
+        let myBoard = null;
+        let opponentBoardState = null; // 對手 boardState 快取
+        
+        // 計時器
+        let myTimerInterval = null;
+        let opponentTimerInterval = null;
+        
+        // 難度設定
+        const difficulties = {
+            easy: { rows: 9, cols: 9, mines: 10, label: '初級' },
+            medium: { rows: 16, cols: 16, mines: 40, label: '中等' },
+            hard: { rows: 16, cols: 30, mines: 99, label: '高級' }
+        };
+        let selectedDifficulty = 'medium';
+        
+        // ====================== Minesweeper 類別 ======================
+        class Minesweeper {
+            constructor(rows, cols, mines) {
+                this.rows = rows;
+                this.cols = cols;
+                this.mines = mines;
+                this.grid = Array.from({ length: rows }, () => Array(cols).fill(0)); // -1 = 地雷，其餘為數字
+                this.revealed = Array.from({ length: rows }, () => Array(cols).fill(false));
+                this.flagged = Array.from({ length: rows }, () => Array(cols).fill(false));
+                this.firstClick = true;
+                this.timer = 0;
+                this.gameOver = false;
+                this.won = false;
+                this.revealedValues = Array.from({ length: rows }, () => Array(cols).fill(null));
+            }
+            
+            placeMines(excludeRow, excludeCol) {
+                let placed = 0;
+                while (placed < this.mines) {
+                    const r = Math.floor(Math.random() * this.rows);
+                    const c = Math.floor(Math.random() * this.cols);
+                    if (r === excludeRow && c === excludeCol) continue;
+                    if (this.grid[r][c] !== -1) {
+                        this.grid[r][c] = -1;
+                        placed++;
+                    }
+                }
+                this.calculateNumbers();
+            }
+            
+            calculateNumbers() {
+                for (let r = 0; r < this.rows; r++) {
+                    for (let c = 0; c < this.cols; c++) {
+                        if (this.grid[r][c] === -1) continue;
+                        let count = 0;
+                        for (let dr = -1; dr <= 1; dr++) {
+                            for (let dc = -1; dc <= 1; dc++) {
+                                if (dr === 0 && dc === 0) continue;
+                                const nr = r + dr, nc = c + dc;
+                                if (nr < 0 || nr >= this.rows || nc < 0 || nc >= this.cols) continue;
+                                if (this.grid[nr][nc] === -1) count++;
+                            }
+                        }
+                        this.grid[r][c] = count;
+                    }
+                }
+            }
+            
+            reveal(r, c) {
+                if (this.gameOver || this.revealed[r][c] || this.flagged[r][c]) return false;
+                
+                if (this.firstClick) {
+                    this.firstClick = false;
+                    this.placeMines(r, c);
+                    this.startTimer();
+                }
+                
+                this.revealed[r][c] = true;
+                this.revealedValues[r][c] = this.grid[r][c];
+                
+                if (this.grid[r][c] === -1) {
+                    this.gameOver = true;
+                    this.revealAllMines();
+                    return false;
+                }
+                
+                if (this.grid[r][c] === 0) this.floodFill(r, c);
+                this.checkWin();
+                return true;
+            }
+            
+            floodFill(r, c) {
+                for (let dr = -1; dr <= 1; dr++) {
+                    for (let dc = -1; dc <= 1; dc++) {
+                        if (dr === 0 && dc === 0) continue;
+                        const nr = r + dr, nc = c + dc;
+                        if (nr < 0 || nr >= this.rows || nc < 0 || nc >= this.cols) continue;
+                        if (!this.revealed[nr][nc] && !this.flagged[nr][nc]) {
+                            this.revealed[nr][nc] = true;
+                            this.revealedValues[nr][nc] = this.grid[nr][nc];
+                            if (this.grid[nr][nc] === 0) this.floodFill(nr, nc);
+                        }
+                    }
+                }
+            }
+            
+            toggleFlag(r, c) {
+                if (this.gameOver || this.revealed[r][c]) return;
+                this.flagged[r][c] = !this.flagged[r][c];
+            }
+            
+            startTimer() {
+                if (myTimerInterval) clearInterval(myTimerInterval);
+                myTimerInterval = setInterval(() => {
+                    if (!this.gameOver) {
+                        this.timer++;
+                        document.getElementById('me-timer').textContent = String(this.timer).padStart(3, '0');
+                        if (currentMode === 'multi') syncMyBoardState();
+                    }
+                }, 1000);
+            }
+            
+            checkWin() {
+                let safeRevealed = 0;
+                for (let r = 0; r < this.rows; r++) {
+                    for (let c = 0; c < this.cols; c++) {
+                        if (this.revealed[r][c] && this.grid[r][c] !== -1) safeRevealed++;
+                    }
+                }
+                if (safeRevealed === this.rows * this.cols - this.mines) {
+                    this.won = true;
+                    this.gameOver = true;
+                    clearInterval(myTimerInterval);
+                    if (currentMode === 'multi') handleWin();
+                }
+            }
+            
+            revealAllMines() {
+                for (let r = 0; r < this.rows; r++) {
+                    for (let c = 0; c < this.cols; c++) {
+                        if (this.grid[r][c] === -1) {
+                            this.revealed[r][c] = true;
+                            this.revealedValues[r][c] = -1;
+                        }
+                    }
+                }
+            }
+            
+            getState() {
+                return {
+                    revealed: this.revealed.map(row => [...row]),
+                    flagged: this.flagged.map(row => [...row]),
+                    revealedValues: this.revealedValues.map(row => [...row]),
+                    timer: this.timer,
+                    minesLeft: this.mines - this.flagged.flat().filter(Boolean).length,
+                    won: this.won,
+                    gameOver: this.gameOver
+                };
+            }
+            
+            getNumberColor(n) {
+                const colors = {1:'#1e40af',2:'#15803d',3:'#b91c1c',4:'#6b21a8',5:'#854d0e',6:'#0f766e',7:'#1f2937',8:'#444444'};
+                return colors[n] || '#000';
+            }
+        }
+        
+        // ====================== Firebase 初始化 ======================
+        function initFirebase() {
+            if (firebaseApp) return;
+            firebaseApp = firebase.initializeApp(firebaseConfig);
+            auth = firebase.auth();
+            db = firebase.database();
+            
+            auth.onAuthStateChanged(user => {
+                if (user) {
+                    currentUser = user;
+                    playerNickname = localStorage.getItem('nickname') || `黑空${Math.floor(Math.random()*9999)}`;
+                    document.getElementById('display-name').textContent = playerNickname;
+                    document.getElementById('welcome-name').textContent = playerNickname;
+                } else {
+                    auth.signInAnonymously();
+                }
+            });
+        }
+        
+        // ====================== UI 切換 ======================
+        function showScreen(screen) {
+            document.querySelectorAll('#app > div[id^="screen-"]').forEach(el => el.classList.add('hidden'));
+            const target = document.getElementById(`screen-${screen}`);
+            if (target) target.classList.remove('hidden');
+        }
+        
+        // ====================== 單人模式 ======================
+        function startSinglePlayer() {
+            currentMode = 'single';
+            selectedDifficulty = 'medium'; // 預設中等（參考圖片）
+            
+            myBoard = new Minesweeper(
+                difficulties[selectedDifficulty].rows,
+                difficulties[selectedDifficulty].cols,
+                difficulties[selectedDifficulty].mines
+            );
+            
+            showScreen('game');
+            document.getElementById('opponent-panel').classList.add('hidden');
+            document.getElementById('me-name').textContent = playerNickname;
+            document.getElementById('me-difficulty').innerHTML = `難度：<span class="font-bold">${difficulties[selectedDifficulty].label}</span>`;
+            
+            renderMainBoard();
+            resetGameUI();
+        }
+        
+        function renderMainBoard() {
+            const container = document.getElementById('main-board-container');
+            container.style.gridTemplateColumns = `repeat(${myBoard.cols}, 32px)`;
+            container.innerHTML = '';
+            
+            for (let r = 0; r < myBoard.rows; r++) {
+                for (let c = 0; c < myBoard.cols; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.r = r;
+                    cell.dataset.c = c;
+                    
+                    // 右鍵旗子
+                    cell.addEventListener('contextmenu', e => {
+                        e.preventDefault();
+                        if (myBoard.gameOver) return;
+                        myBoard.toggleFlag(r, c);
+                        renderMainBoard();
+                        if (currentMode === 'multi') syncMyBoardState();
+                    });
+                    
+                    // 左鍵翻開
+                    cell.addEventListener('click', () => {
+                        if (myBoard.gameOver) return;
+                        const success = myBoard.reveal(r, c);
+                        renderMainBoard();
+                        if (currentMode === 'multi') syncMyBoardState();
+                        if (!success && myBoard.gameOver) {
+                            // 踩雷
+                            setTimeout(() => alert('💥 您踩到地雷了！'), 100);
+                        }
+                    });
+                    
+                    // 初始渲染
+                    if (myBoard.revealed[r][c]) {
+                        cell.classList.add('revealed');
+                        const val = myBoard.grid[r][c];
+                        if (val === -1) {
+                            cell.innerHTML = '💣';
+                        } else if (val > 0) {
+                            cell.innerHTML = `<span class="number-${val}">${val}</span>`;
+                        }
+                    } else if (myBoard.flagged[r][c]) {
+                        cell.classList.add('flagged');
+                        cell.innerHTML = '🚩';
+                    }
+                    
+                    container.appendChild(cell);
+                }
+            }
+        }
+        
+        function resetGameUI() {
+            document.getElementById('me-timer').textContent = '000';
+            document.getElementById('me-flags').textContent = myBoard.mines;
+            document.getElementById('game-status-bar').classList.add('hidden');
+        }
+        
+        function restartSingle() {
+            document.getElementById('single-result').classList.add('hidden');
+            startSinglePlayer();
+        }
+        
+        // ====================== 雙人模式 - 大廳 & 房間 ======================
+        let roomsRef = null;
+        
+        function enterLobby() {
+            currentMode = 'multi';
+            initFirebase();
+            showScreen('lobby');
+            loadRooms();
+        }
+        
+        function loadRooms() {
+            const listEl = document.getElementById('rooms-list');
+            const noRooms = document.getElementById('no-rooms');
+            
+            if (roomsRef) roomsRef.off();
+            
+            roomsRef = db.ref('rooms');
+            roomsRef.on('value', snapshot => {
+                listEl.innerHTML = '';
+                const rooms = snapshot.val() || {};
+                let hasRoom = false;
+                
+                Object.keys(rooms).forEach(roomId => {
+                    const room = rooms[roomId];
+                    if (room.status !== 'waiting') return;
+                    
+                    hasRoom = true;
+                    const playersCount = (room.players?.host ? 1 : 0) + (room.players?.guest ? 1 : 0);
+                    
+                    const card = document.createElement('div');
+                    card.className = 'bg-white/10 hover:bg-white/20 rounded-3xl p-6 cursor-pointer transition';
+                    card.innerHTML = `
+                        <div class="flex justify-between">
+                            <div class="font-mono text-3xl font-bold text-[#4ade80]">${roomId}</div>
+                            <div class="text-xs px-4 h-fit bg-white/20 rounded-2xl">${difficulties[room.difficulty || 'medium'].label}</div>
+                        </div>
+                        <div class="flex items-center mt-6 text-sm">
+                            <div>👑 ${room.players?.host?.name || '---'}</div>
+                            <div class="flex-1 text-center text-white/40">vs</div>
+                            <div>${room.players?.guest?.name || '等待加入'}</div>
+                        </div>
+                        <div class="mt-4 text-xs text-white/50">${playersCount}/2 人</div>
+                    `;
+                    card.onclick = () => joinRoom(roomId);
+                    listEl.appendChild(card);
+                });
+                
+                noRooms.classList.toggle('hidden', hasRoom);
+            });
+        }
+        
+        function createRoom() {
+            const roomId = 'ROOM-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+            selectedDifficulty = 'medium'; // 預設中等
+            
+            db.ref('rooms/' + roomId).set({
+                id: roomId,
+                created: Date.now(),
+                difficulty: selectedDifficulty,
+                status: 'waiting',
+                players: {
+                    host: {
+                        uid: currentUser.uid,
+                        name: playerNickname,
+                        ready: false
+                    },
+                    guest: null
+                },
+                boardStates: {
+                    host: null,
+                    guest: null
+                },
+                winner: null,
+                rematch: { host: false, guest: false }
+            }).then(() => {
+                currentRoomId = roomId;
+                myRole = 'host';
+                showScreen('screen-room');
+                listenRoom();
+            });
+        }
+        
+        function joinRoom(roomId) {
+            currentRoomId = roomId;
+            myRole = 'guest';
+            
+            db.ref('rooms/' + roomId + '/players/guest').set({
+                uid: currentUser.uid,
+                name: playerNickname,
+                ready: false
+            }).then(() => {
+                showScreen('screen-room');
+                listenRoom();
+            });
+        }
+        
+        function listenRoom() {
+            db.ref('rooms/' + currentRoomId).on('value', snapshot => {
+                const room = snapshot.val();
+                if (!room) return;
+                
+                // 更新玩家資訊
+                document.getElementById('room-id-display').textContent = room.id;
+                
+                // Host
+                const host = room.players?.host;
+                if (host) {
+                    document.getElementById('host-name').textContent = host.name + (myRole === 'host' ? ' (您)' : '');
+                    if (host.ready) document.getElementById('host-ready').classList.remove('hidden');
+                    else document.getElementById('host-ready').classList.add('hidden');
+                }
+                
+                // Guest
+                const guest = room.players?.guest;
+                if (guest) {
+                    document.getElementById('guest-name').textContent = guest.name + (myRole === 'guest' ? ' (您)' : '');
+                    if (guest.ready) document.getElementById('guest-ready').classList.remove('hidden');
+                    else document.getElementById('guest-ready').classList.add('hidden');
+                }
+                
+                // 準備按鈕狀態
+                const readyBtn = document.getElementById('ready-btn');
+                const meReady = myRole === 'host' ? room.players?.host?.ready : room.players?.guest?.ready;
+                readyBtn.textContent = meReady ? '取消準備' : '準備完成';
+                
+                // 如果雙方都準備 → 開始遊戲
+                if (room.players?.host?.ready && room.players?.guest?.ready && room.status === 'waiting') {
+                    startMultiGame(room);
+                }
+                
+                // 遊戲進行中
+                if (room.status === 'playing') {
+                    if (document.getElementById('screen-game').classList.contains('hidden')) {
+                        startMultiGame(room);
+                    }
+                }
+                
+                // 結算
+                if (room.winner) {
+                    handleGameEnd(room);
+                }
+            });
+        }
+        
+        function toggleReady() {
+            const path = `rooms/${currentRoomId}/players/${myRole}/ready`;
+            db.ref(path).transaction(current => !current);
+        }
+        
+        function leaveRoom() {
+            if (confirm('確定離開房間？')) {
+                db.ref('rooms/' + currentRoomId).once('value').then(s => {
+                    const room = s.val();
+                    if (room.players[myRole].uid === currentUser.uid) {
+                        db.ref(`rooms/${currentRoomId}/players/${myRole}`).remove();
+                    }
+                    // 如果房主離開，整個房間刪除
+                    if (myRole === 'host') db.ref('rooms/' + currentRoomId).remove();
+                }).finally(() => {
+                    currentRoomId = null;
+                    showScreen('lobby');
+                    loadRooms();
+                });
+            }
+        }
+        
+        function startMultiGame(room) {
+            showScreen('game');
+            document.getElementById('opponent-panel').classList.remove('hidden');
+            
+            selectedDifficulty = room.difficulty || 'medium';
+            const diff = difficulties[selectedDifficulty];
+            
+            myBoard = new Minesweeper(diff.rows, diff.cols, diff.mines);
+            
+            document.getElementById('me-name').textContent = playerNickname;
+            document.getElementById('me-difficulty').innerHTML = `難度：<span class="font-bold">${diff.label}</span>`;
+            document.getElementById('opponent-name').textContent = myRole === 'host' ? room.players.guest.name : room.players.host.name;
+            
+            renderMainBoard();
+            resetGameUI();
+            
+            // 開始監聽對手板
+            listenOpponentBoard();
+        }
+        
+        function listenOpponentBoard() {
+            const oppRole = myRole === 'host' ? 'guest' : 'host';
+            db.ref(`rooms/${currentRoomId}/boardStates/${oppRole}`).on('value', snap => {
+                opponentBoardState = snap.val();
+                if (!opponentBoardState) return;
+                
+                // 更新對手小板
+                renderMiniBoard();
+                
+                // 更新對手計時器與旗數
+                document.getElementById('opponent-timer').textContent = String(opponentBoardState.timer || 0).padStart(3, '0');
+                document.getElementById('opponent-flags').textContent = opponentBoardState.minesLeft || 0;
+                
+                if (opponentBoardState.won) {
+                    // 對手已獲勝
+                    handleGameEnd({winner: oppRole});
+                }
+            });
+        }
+        
+        function renderMiniBoard() {
+            if (!opponentBoardState) return;
+            const container = document.getElementById('mini-board-container');
+            container.style.gridTemplateColumns = `repeat(${myBoard.cols}, 16px)`;
+            container.innerHTML = '';
+            
+            const rows = opponentBoardState.revealed.length;
+            const cols = opponentBoardState.revealed[0].length;
+            
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    
+                    if (opponentBoardState.revealed[r][c]) {
+                        cell.classList.add('revealed');
+                        const val = opponentBoardState.revealedValues[r][c];
+                        if (val === -1) cell.innerHTML = '💣';
+                        else if (val > 0) {
+                            cell.innerHTML = `<span class="number-${val}">${val}</span>`;
+                        }
+                    } else if (opponentBoardState.flagged[r][c]) {
+                        cell.classList.add('flagged');
+                        cell.innerHTML = '🚩';
+                    }
+                    container.appendChild(cell);
+                }
+            }
+        }
+        
+        function syncMyBoardState() {
+            if (!currentRoomId || !myBoard) return;
+            const state = myBoard.getState();
+            db.ref(`rooms/${currentRoomId}/boardStates/${myRole}`).set(state);
+        }
+        
+        function handleWin() {
+            syncMyBoardState();
+            db.ref(`rooms/${currentRoomId}`).update({
+                status: 'finished',
+                winner: myRole
+            });
+        }
+        
+        function handleGameEnd(room) {
+            clearInterval(myTimerInterval);
+            const isWinner = room.winner === myRole;
+            
+            const modal = document.getElementById('result-modal');
+            document.getElementById('result-title').innerHTML = isWinner 
+                ? `🎉 您獲勝！<br><span class="text-2xl">率先完成踩地雷</span>` 
+                : `😢 對手獲勝`;
+            
+            document.getElementById('result-subtitle').innerHTML = isWinner 
+                ? `您的時間 <span class="font-mono">${myBoard.timer}</span> 秒` 
+                : `對手已完成`;
+            
+            document.getElementById('rematch-count').textContent = '0/2';
+            modal.classList.remove('hidden');
+            
+            // 重置 rematch
+            db.ref(`rooms/${currentRoomId}/rematch`).set({host: false, guest: false});
+        }
+        
+        function rematch() {
+            const btn = document.getElementById('rematch-btn');
+            btn.style.opacity = 0.5;
+            
+            db.ref(`rooms/${currentRoomId}/rematch/${myRole}`).set(true);
+            
+            // 監聽雙方是否都點擊
+            db.ref(`rooms/${currentRoomId}/rematch`).on('value', snap => {
+                const rem = snap.val() || {};
+                const count = (rem.host ? 1 : 0) + (rem.guest ? 1 : 0);
+                document.getElementById('rematch-count').innerHTML = `${count}/2`;
+                
+                if (count === 2) {
+                    // 3秒後開始新局
+                    setTimeout(() => {
+                        db.ref(`rooms/${currentRoomId}`).update({
+                            status: 'playing',
+                            winner: null,
+                            boardStates: { host: null, guest: null },
+                            rematch: { host: false, guest: false }
+                        });
+                        document.getElementById('result-modal').classList.add('hidden');
+                    }, 3000);
+                }
+            });
+        }
+        
+        function returnToRoom() {
+            document.getElementById('result-modal').classList.add('hidden');
+            // 回到房間（遊戲已結束）
+            db.ref(`rooms/${currentRoomId}/status`).set('waiting');
+            showScreen('screen-room');
+        }
+        
+        // ====================== 其他輔助 ======================
+        function backToHome() {
+            if (currentRoomId) {
+                leaveRoom();
+            }
+            currentMode = null;
+            showScreen('home');
+        }
+        
+        function logout() {
+            if (confirm('確定登出？')) {
+                auth.signOut();
+                location.reload();
+            }
+        }
+        
+        // ====================== 啟動 ======================
+        window.onload = function() {
+            initFirebase();
+            // 預設顯示首頁
+            showScreen('home');
+            
+            console.log('%c🎮 踩地雷對戰網站已載入！專業設計已完美還原您上傳的圖片風格。', 'color:#4ade80;font-size:16px;font-weight:bold');
+            console.log('✅ 單人模式 • 雙人即時房間 • 準備機制 • 再來一局 1/2 2/2 • 3秒自動開始');
+            console.log('請替換 firebaseConfig 後即可上傳 GitHub Pages 部署');
+        };
+    </script>
+</body>
+</html>
