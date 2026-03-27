@@ -667,9 +667,15 @@
         }
         
         function createRoom() {
+            // 新增這段檢查
+            if (!currentUser) {
+                alert("🔄 Firebase 正在登入中，請等待 1~2 秒後再點擊「建立新房間」");
+                return;
+            }
+        
             const roomId = 'ROOM-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-            selectedDifficulty = 'medium'; // 預設中等
-            
+            selectedDifficulty = 'medium';
+        
             db.ref('rooms/' + roomId).set({
                 id: roomId,
                 created: Date.now(),
@@ -689,11 +695,16 @@
                 },
                 winner: null,
                 rematch: { host: false, guest: false }
-            }).then(() => {
+            })
+            .then(() => {
                 currentRoomId = roomId;
                 myRole = 'host';
                 showScreen('screen-room');
                 listenRoom();
+            })
+            .catch(err => {
+                console.error("建立房間失敗：", err);
+                alert("❌ 建立房間失敗\n" + err.message + "\n\n請重新整理網頁後再試");
             });
         }
         
