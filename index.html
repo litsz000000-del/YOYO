@@ -507,23 +507,44 @@
         }
         
         // ====================== Firebase 初始化 ======================
-        function initFirebase() {
-            if (firebaseApp) return;
-            firebaseApp = firebase.initializeApp(firebaseConfig);
-            auth = firebase.auth();
-            db = firebase.database();
-            
-            auth.onAuthStateChanged(user => {
-                if (user) {
-                    currentUser = user;
-                    playerNickname = localStorage.getItem('nickname') || `黑空${Math.floor(Math.random()*9999)}`;
-                    document.getElementById('display-name').textContent = playerNickname;
-                    document.getElementById('welcome-name').textContent = playerNickname;
-                } else {
-                    auth.signInAnonymously();
-                }
-            });
-        }
+
+            function initFirebase() {
+                if (firebaseApp) return;
+        
+                firebaseApp = firebase.initializeApp(firebaseConfig);
+                auth = firebase.auth();
+                db = firebase.database();
+        
+                console.log("🔄 Firebase 初始化完成，正在進行匿名登入...");
+        
+                auth.onAuthStateChanged(user => {
+                    if (user) {
+                        // ✅ 登入成功
+                        currentUser = user;
+                        playerNickname = localStorage.getItem('nickname') || `黑空${Math.floor(Math.random() * 9999)}`;
+                        document.getElementById('display-name').textContent = playerNickname;
+                        document.getElementById('welcome-name').textContent = playerNickname;
+                        console.log("✅ 匿名登入成功！UID:", user.uid);
+                    } else {
+                        // 尚未登入 → 執行匿名登入
+                        console.log("🔄 開始執行匿名登入...");
+                        auth.signInAnonymously()
+                            .then(() => {
+                                console.log("✅ 匿名登入成功！");
+                            })
+                            .catch(err => {
+                                console.error("❌ 匿名登入失敗：", err);
+                                if (err.code === 'auth/operation-not-allowed') {
+                                    alert("❌ Firebase 尚未開啟「匿名登入」！\n\n請到 Firebase Console → Authentication → Sign-in method 開啟 Anonymous");
+                                } else if (err.code === 'auth/network-request-failed') {
+                                    alert("❌ 網路連線失敗，請檢查網路或 VPN");
+                                } else {
+                                    alert("❌ 登入失敗：" + err.message + "\n\n請重新整理網頁後再試");
+                                }
+                            });
+                    }
+                });
+            }
         
         // ====================== UI 切換 ======================
         function showScreen(screen) {
